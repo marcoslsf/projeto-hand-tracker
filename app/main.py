@@ -1,17 +1,13 @@
 import cv2
-from hand_detector import HandTracker
+import mediapipe as mp
 from drawing import Drawing
 
 def main():
-    cap = cv2.VideoCapture(0)
-    hand_tracker = HandTracker()
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
+    hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7, min_tracking_confidence=0.5)
     drawing = Drawing()
-
-    THRESHOLD_ON = 3
-    THRESHOLD_OFF = 3
-    on_counter = 0
-    off_counter = 0
-    draw_state = False
+    cap = cv2.VideoCapture(0)
 
     while True:
         ret, frame = cap.read()
@@ -19,42 +15,33 @@ def main():
             break
 
         frame = cv2.flip(frame, 1)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb)
 
-        hands, clean_frame, landmark_frame = hand_tracker.process(frame_rgb)
+        mask = frame.copy()
 
-        tip = None
-        if hands:
-            lm = hands[0].landmark
-            tip = (
-                int(lm[8].x * frame.shape[1]),
-                int(lm[8].y * frame.shape[0])
-            )
-            if hand_tracker.is_thumb_and_index_close(lm):
-                on_counter += 1
-                off_counter = 0
-            else:
-                off_counter += 1
-                on_counter = 0
-        else:
-            off_counter += 1
-            on_counter = 0
+        if result.multi_hand_landmarks:
+            for i, hand_landmarks in enumerate(result.multi_hand_landmarks):
+                mp_drawing.draw_landmarks(mask, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                lm = hand_landmarks.landmark
+                h, w, _ = frame.shape
+                index_finger_tip = lm[8]
+                thumb_tip = lm[4]
+                ix, iy = int(index_finger_tip.x * w), int(index_finger_tip.y * h)
+                tx, ty = int(thumb_tip.x * w), int(thumb_tip.y * h)
 
-        if not draw_state and on_counter >= THRESHOLD_ON:
-            draw_state = True
-        elif draw_state and off_counter >= THRESHOLD_OFF:
-            draw_state = False
+                pinch_distance = ((ix - tx) ** 2 + (iy - ty) ** 2) ** 0.5
 
-        if draw_state and tip is not None:
-            drawing.add_point(tip)
+                if pinch_distance < 40:
+                    drawing.process_point((ix, iy), frame, hand_id=i)
+                else:
+                    drawing.process_point(None, frame, hand_id=i)
 
-        canvas = drawing.draw(clean_frame)
-        
-        # Mostrar as janelas
-        cv2.imshow("Hand Detection", landmark_frame)
-        cv2.imshow("Drawing", canvas)
+        output = drawing.draw(frame)
+        cv2.imshow("Drawing", output)
+        cv2.imshow("Mascara", mask)
 
-        if cv2.waitKey(1) & 0xFF == 27:  
+        if cv2.waitKey(1) & 0xFF == 27:
             break
 
     cap.release()
