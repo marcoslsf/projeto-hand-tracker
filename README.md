@@ -11,7 +11,7 @@ Este projeto utiliza a tecnologia de detecção de mãos e marcadores do MediaPi
 
 ## Tecnologias
 
-- **Python** 3.x
+- **Python** 3.8
 - **OpenCV**: Para manipulação de imagens e vídeos em tempo real.
 - **MediaPipe**: Para detecção de mãos e pontos-chave.
 
