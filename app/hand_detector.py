@@ -1,5 +1,6 @@
 import cv2
 import mediapipe as mp
+import math
 
 class HandTracker:
     def __init__(self):
@@ -11,6 +12,16 @@ class HandTracker:
             min_tracking_confidence=0.7
         )
         self.mp_draw = mp.solutions.drawing_utils
+
+    def calc_distance(self, p1, p2):
+        return math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+
+    def is_thumb_and_index_close(self, landmarks):
+        index_tip = (landmarks[8].x, landmarks[8].y)
+        thumb_tip = (landmarks[4].x, landmarks[4].y)
+        distance = self.calc_distance(index_tip, thumb_tip)
+        threshold = 0.05
+        return distance < threshold
 
     def process(self, frame_rgb):
         result = self.hands.process(frame_rgb)
@@ -24,5 +35,4 @@ class HandTracker:
             return result.multi_hand_landmarks, clean_frame, landmark_frame
         return None, clean_frame, landmark_frame
 
-    def is_index_finger_up(self, landmarks):
-        return landmarks[8].y < landmarks[6].y
+

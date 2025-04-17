@@ -10,11 +10,14 @@ class Drawing:
         self.eraser_mode = False
 
     
+        self.points = []
+        self.line_color = (0, 255, 0)
+        self.line_thickness = 5
+        self.eraser_mode = False
+
         cv2.namedWindow("Drawing")
         cv2.createTrackbar("Espessura", "Drawing", 5, 20, self.update_thickness)
         cv2.createTrackbar("Cor", "Drawing", 0, 2, self.update_color)
-
-
         cv2.setMouseCallback("Drawing", self.mouse_callback)
 
     def update_thickness(self, val):
@@ -28,8 +31,8 @@ class Drawing:
         elif val == 2:
             self.line_color = (255, 0, 0)
 
-    def mouse_callback(self, event, x, y, flags, param):
 
+    def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_RBUTTONDOWN:
             self.eraser_mode = True
         elif event == cv2.EVENT_RBUTTONUP:
@@ -38,21 +41,13 @@ class Drawing:
     def add_point(self, point):
         if point:
             self.points.append((point, self.eraser_mode))
-        else:
-            self.points.append((None, self.eraser_mode))
 
     def draw(self, frame):
-        canvas_copy = frame.copy()
+        canvas = frame.copy()
         for i in range(1, len(self.points)):
             pt1, erase1 = self.points[i - 1]
             pt2, erase2 = self.points[i]
-
-            if pt1 is None or pt2 is None:
-                continue
-
             color = (0, 0, 0) if erase2 else self.line_color
             thickness = self.line_thickness + 10 if erase2 else self.line_thickness
-            cv2.line(canvas_copy, pt1, pt2, color, thickness)
-
-        self.canvas = canvas_copy
-        return canvas_copy
+            cv2.line(canvas, pt1, pt2, color, thickness)
+        return canvas
