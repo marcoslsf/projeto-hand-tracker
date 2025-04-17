@@ -14,13 +14,15 @@ class HandTracker:
 
     def process(self, frame_rgb):
         result = self.hands.process(frame_rgb)
-        frame_output = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR).copy()
+        frame_output = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        clean_frame = frame_output.copy()
+        landmark_frame = frame_output.copy()
 
         if result.multi_hand_landmarks:
             for hand in result.multi_hand_landmarks:
-                self.mp_draw.draw_landmarks(frame_output, hand, self.mp_hands.HAND_CONNECTIONS)
-            return result.multi_hand_landmarks, frame_output
-        return None, frame_output
+                self.mp_draw.draw_landmarks(landmark_frame, hand, self.mp_hands.HAND_CONNECTIONS)
+            return result.multi_hand_landmarks, clean_frame, landmark_frame
+        return None, clean_frame, landmark_frame
 
     def is_index_finger_up(self, landmarks):
         return landmarks[8].y < landmarks[6].y

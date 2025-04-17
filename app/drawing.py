@@ -41,8 +41,8 @@ class Drawing:
         else:
             self.points.append((None, self.eraser_mode))
 
-    def draw(self):
-        canvas_copy = self.canvas.copy()
+    def draw(self, frame):
+        canvas_copy = frame.copy()
         for i in range(1, len(self.points)):
             pt1, erase1 = self.points[i - 1]
             pt2, erase2 = self.points[i]

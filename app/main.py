@@ -15,7 +15,7 @@ def main():
         frame = cv2.flip(frame, 1)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        hands, mask_frame = hand_tracker.process(frame_rgb)
+        hands, clean_frame, landmark_frame = hand_tracker.process(frame_rgb)
 
         tip = None
         if hands:
@@ -26,10 +26,10 @@ def main():
             else:
                 drawing.add_point(None)
 
-        canvas = drawing.draw()
+        canvas = drawing.draw(clean_frame)
 
         # Mostrar as janelas
-        cv2.imshow("Hand Detection", mask_frame)
+        cv2.imshow("Hand Detection", landmark_frame)
         cv2.imshow("Drawing", canvas)
 
         if cv2.waitKey(1) & 0xFF == 27:  
