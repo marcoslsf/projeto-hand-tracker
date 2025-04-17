@@ -15,6 +15,12 @@ Este projeto utiliza a tecnologia de detecção de mãos e marcadores do MediaPi
 - **OpenCV**: Para manipulação de imagens e vídeos em tempo real.
 - **MediaPipe**: Para detecção de mãos e pontos-chave.
 
+### Desenhando com indicador
+![Exemplo 1](assets/images/Screenshot_1.png)
+
+### Reconhecimento em tempo real
+![Exemplo 2](assets/images/Screenshot_4.png)
+
 ## Como Rodar
 
 ### Pré-requisitos
@@ -51,4 +57,4 @@ Certifique-se de ter o Python 3.x instalado. Além disso, instale as dependênci
 
 ### Fechar o aplicativo
 
-- Para fechar o aplicativo, pressione a tecla `q`.
+- Para fechar o aplicativo, pressione a tecla `ESC`.
