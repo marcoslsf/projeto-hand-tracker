@@ -161,13 +161,11 @@ class AppController:
                     landmarks = hand_landmarks.landmark
                     h, w = frame.shape[:2]
                     
-                    # Verifica gestos
-                    is_fist = self.is_fist_closed(landmarks)
+                    # Verifica gestos - PINÇA
                     is_pinch = self.is_pinch_gesture(landmarks)
-                    is_open = self.is_hand_open(landmarks)
                     
-                    # Controle do mouse (pinça)
-                    if is_pinch and not is_fist:
+                    # Controle do mouse (pinça) - PRIORIDADE
+                    if is_pinch:
                         self.mouse_mode = True
                         # Usa o ponto médio entre polegar e indicador
                         thumb_tip = landmarks[4]
@@ -186,65 +184,74 @@ class AppController:
                         
                         status_text[0] = "status: controle do mouse ativo (pinça)"
                         status_text.append("abra a mao para clicar")
+                        
+                        # Reseta detecções de outros gestos quando em pinça
+                        self.fist_detected = False
+                        self.confirmation_shown = False
                     else:
+                        # Só verifica outros gestos se NÃO estiver em pinça
                         self.mouse_mode = False
                         # Reseta suavização quando sai do modo mouse
                         self.smooth_x = None
                         self.smooth_y = None
-                    
-                    # Clique (mão aberta)
-                    if is_open and not is_fist and not is_pinch:
-                        current_time = time.time()
-                        if current_time - self.last_click_time >= self.click_cooldown:
-                            pyautogui.click()
-                            self.last_click_time = current_time
-                            status_text[0] = "status: clique realizado!"
-                            status_text.append("mao aberta detectada")
+                        
+                        # Verifica outros gestos apenas se não for pinça
+                        is_fist = self.is_fist_closed(landmarks)
+                        is_open = self.is_hand_open(landmarks)
+                        
+                        # Clique (mão aberta) - só se não for pinça nem mão fechada
+                        if is_open and not is_fist:
+                            current_time = time.time()
+                            if current_time - self.last_click_time >= self.click_cooldown:
+                                pyautogui.click()
+                                self.last_click_time = current_time
+                                status_text[0] = "status: clique realizado!"
+                                status_text.append("mao aberta detectada")
+                            else:
+                                status_text[0] = "status: mao aberta (aguarde)"
+                                status_text.append("cooldown do clique")
+                        
+                        # Fechar app (mão fechada) - só se não for pinça nem mão aberta
+                        elif is_fist:
+                            current_time = time.time()
+                            
+                            if not self.fist_detected:
+                                self.last_fist_time = current_time
+                                self.fist_detected = True
+                            
+                            hold_time = current_time - self.last_fist_time
+                            remaining_time = self.fist_hold_duration - hold_time
+                            
+                            if remaining_time > 0:
+                                status_text[0] = f"status: mao fechada ({remaining_time:.1f}s)"
+                                status_text.append("aguarde para confirmar fechamento")
+                            else:
+                                status_text[0] = "status: pronto para fechar!"
+                                status_text.append("modal aparecera em breve")
+                            
+                            # Verifica se a mão está fechada por tempo suficiente
+                            if hold_time >= self.fist_hold_duration:
+                                if not self.confirmation_shown:
+                                    self.confirmation_shown = True
+                                    
+                                    # Mostra confirmação em thread separada para não bloquear
+                                    def show_and_close():
+                                        if self.show_confirmation():
+                                            self.close_active_app()
+                                        # Reseta após 2 segundos
+                                        time.sleep(2)
+                                        self.confirmation_shown = False
+                                    
+                                    thread = threading.Thread(target=show_and_close)
+                                    thread.daemon = True
+                                    thread.start()
                         else:
-                            status_text[0] = "status: mao aberta (aguarde)"
-                            status_text.append("cooldown do clique")
-                    
-                    # Fechar app (mão fechada)
-                    if is_fist:
-                        current_time = time.time()
-                        
-                        if not self.fist_detected:
-                            self.last_fist_time = current_time
-                            self.fist_detected = True
-                        
-                        hold_time = current_time - self.last_fist_time
-                        remaining_time = self.fist_hold_duration - hold_time
-                        
-                        if remaining_time > 0:
-                            status_text[0] = f"status: mao fechada ({remaining_time:.1f}s)"
-                            status_text.append("aguarde para confirmar fechamento")
-                        else:
-                            status_text[0] = "status: pronto para fechar!"
-                            status_text.append("modal aparecera em breve")
-                        
-                        # Verifica se a mão está fechada por tempo suficiente
-                        if hold_time >= self.fist_hold_duration:
-                            if not self.confirmation_shown:
-                                self.confirmation_shown = True
-                                
-                                # Mostra confirmação em thread separada para não bloquear
-                                def show_and_close():
-                                    if self.show_confirmation():
-                                        self.close_active_app()
-                                    # Reseta após 2 segundos
-                                    time.sleep(2)
-                                    self.confirmation_shown = False
-                                
-                                thread = threading.Thread(target=show_and_close)
-                                thread.daemon = True
-                                thread.start()
-                    elif not is_pinch and not is_open:
-                        # Status padrão quando mão detectada mas sem gestos específicos
-                        if not status_text or status_text[0] == "status: aguardando mao":
-                            status_text[0] = "status: mao detectada"
-                            status_text.append("pinça: move mouse | mao aberta: clique")
-                        self.fist_detected = False
-                        self.confirmation_shown = False
+                            # Status padrão quando mão detectada mas sem gestos específicos
+                            if not status_text or status_text[0] == "status: aguardando mao":
+                                status_text[0] = "status: mao detectada"
+                                status_text.append("pinça: move mouse | mao aberta: clique")
+                            self.fist_detected = False
+                            self.confirmation_shown = False
             
             # Desenha textos de status
             y_offset = 30
