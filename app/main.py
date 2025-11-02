@@ -13,7 +13,7 @@ class AppController:
         self.tracker = HandTracker()
         self.cap = cv2.VideoCapture(0)
         self.last_fist_time = 0
-        self.fist_hold_duration = 0.2  # segundos que a mão precisa ficar fechada
+        self.fist_hold_duration = 3.0  # segundos que a mão precisa ficar fechada
         self.fist_detected = False
         self.confirmation_shown = False
         
@@ -21,7 +21,19 @@ class AppController:
         self.mouse_mode = False
         self.screen_width, self.screen_height = pyautogui.size()
         self.last_click_time = 0
-        self.click_cooldown = 0.5  # segundos entre cliques
+        self.click_cooldown = 1.0  # segundos entre cliques
+        
+        # Suavização do movimento (filtro de média móvel exponencial)
+        self.smooth_x = None
+        self.smooth_y = None
+        self.smoothing_factor = 0.85  # 0.0 = sem suavização, 1.0 = máximo (valores maiores = mais suave)
+        
+        # Sensibilidade - área da câmera que será usada (em porcentagem, 1.0 = 100%)
+        # Valores menores = maior sensibilidade (menos movimento necessário)
+        self.camera_area_ratio = 0.6  # usa 60% da área central da câmera
+        
+        # Inverter eixo Y se necessário (True = inverte Y)
+        self.invert_y = False
         
     def show_confirmation(self):
         """Mostra modal de confirmação"""
@@ -52,45 +64,66 @@ class AppController:
                 return False
         return True
     
-    def is_index_pointing(self, landmarks):
-        """Verifica se apenas o dedo indicador está estendido (modo mouse)"""
-        # Pontas dos dedos: polegar(4), indicador(8), médio(12), anelar(16), mindinho(20)
-        # Articulações médias: indicador(6), médio(10), anelar(14), mindinho(18)
-        
-        # Indicador deve estar estendido
-        index_extended = landmarks[8].y < landmarks[6].y
-        
-        # Outros dedos devem estar fechados
-        middle_closed = landmarks[12].y > landmarks[10].y
-        ring_closed = landmarks[16].y > landmarks[14].y
-        pinky_closed = landmarks[20].y > landmarks[18].y
-        
-        return index_extended and middle_closed and ring_closed and pinky_closed
-    
-    def is_click_gesture(self, landmarks):
-        """Verifica se polegar e indicador estão juntos (clique)"""
+    def is_pinch_gesture(self, landmarks):
+        """Verifica se polegar e indicador estão juntos (pinça) - move mouse"""
         thumb_tip = (landmarks[4].x, landmarks[4].y)
         index_tip = (landmarks[8].x, landmarks[8].y)
         distance = ((thumb_tip[0] - index_tip[0])**2 + (thumb_tip[1] - index_tip[1])**2)**0.5
         return distance < 0.03
     
+    def is_hand_open(self, landmarks):
+        """Verifica se todos os dedos estão estendidos (mão aberta) - clique"""
+        # Pontas dos dedos: indicador(8), médio(12), anelar(16), mindinho(20)
+        # Articulações médias: indicador(6), médio(10), anelar(14), mindinho(18)
+        
+        index_extended = landmarks[8].y < landmarks[6].y
+        middle_extended = landmarks[12].y < landmarks[10].y
+        ring_extended = landmarks[16].y < landmarks[14].y
+        pinky_extended = landmarks[20].y < landmarks[18].y
+        
+        return index_extended and middle_extended and ring_extended and pinky_extended
+    
     def move_mouse(self, x, y, frame_width, frame_height):
-        """Move o mouse baseado na posição do dedo indicador"""
-        # Converte coordenadas relativas para absolutas da tela
-        screen_x = np.interp(x, [0, frame_width], [0, self.screen_width])
-        screen_y = np.interp(y, [0, frame_height], [0, self.screen_height])
+        """Move o mouse baseado na posição do dedo indicador com suavização"""
+        # Define a área de trabalho na câmera (área central para maior sensibilidade)
+        area_offset_x = frame_width * (1 - self.camera_area_ratio) / 2
+        area_offset_y = frame_height * (1 - self.camera_area_ratio) / 2
+        area_width = frame_width * self.camera_area_ratio
+        area_height = frame_height * self.camera_area_ratio
         
-        # Inverte Y (a câmera está espelhada, mas a tela não)
-        screen_y = self.screen_height - screen_y
+        # Normaliza a posição para a área de trabalho (0 a 1)
+        norm_x = (x - area_offset_x) / area_width if area_width > 0 else 0.5
+        norm_y = (y - area_offset_y) / area_height if area_height > 0 else 0.5
         
-        pyautogui.moveTo(int(screen_x), int(screen_y), duration=0.01)
+        # Limita os valores entre 0 e 1
+        norm_x = max(0, min(1, norm_x))
+        norm_y = max(0, min(1, norm_y))
+        
+        # Inverte Y se necessário
+        if self.invert_y:
+            norm_y = 1 - norm_y
+        
+        # Converte para coordenadas da tela
+        target_x = norm_x * self.screen_width
+        target_y = norm_y * self.screen_height
+        
+        # Aplica suavização (filtro de média móvel exponencial)
+        if self.smooth_x is None or self.smooth_y is None:
+            self.smooth_x = target_x
+            self.smooth_y = target_y
+        else:
+            self.smooth_x = self.smooth_x * self.smoothing_factor + target_x * (1 - self.smoothing_factor)
+            self.smooth_y = self.smooth_y * self.smoothing_factor + target_y * (1 - self.smoothing_factor)
+        
+        # Move o mouse suavemente (duration maior = movimento mais suave)
+        pyautogui.moveTo(int(self.smooth_x), int(self.smooth_y), duration=0.15)
     
     def run(self):
         """Loop principal com tela de debug"""
         print("aplicativo rodando...")
         print("gestos disponiveis:")
-        print("  - dedo indicador estendido: move o mouse")
-        print("  - juntar polegar e indicador: clica")
+        print("  - pinça (polegar e indicador juntos): move o mouse")
+        print("  - mao aberta (todos dedos estendidos): clica")
         print("  - mao fechada: fecha app em foco (com confirmacao)")
         print("pressione ESC para sair")
         
@@ -130,37 +163,46 @@ class AppController:
                     
                     # Verifica gestos
                     is_fist = self.is_fist_closed(landmarks)
-                    is_pointing = self.is_index_pointing(landmarks)
-                    is_click = self.is_click_gesture(landmarks)
+                    is_pinch = self.is_pinch_gesture(landmarks)
+                    is_open = self.is_hand_open(landmarks)
                     
-                    # Controle do mouse (indicador apontando)
-                    if is_pointing and not is_fist:
+                    # Controle do mouse (pinça)
+                    if is_pinch and not is_fist:
                         self.mouse_mode = True
+                        # Usa o ponto médio entre polegar e indicador
+                        thumb_tip = landmarks[4]
                         index_tip = landmarks[8]
-                        index_x = int(index_tip.x * w)
-                        index_y = int(index_tip.y * h)
+                        mid_x = (thumb_tip.x + index_tip.x) / 2
+                        mid_y = (thumb_tip.y + index_tip.y) / 2
+                        
+                        mouse_x = int(mid_x * w)
+                        mouse_y = int(mid_y * h)
                         
                         # Move o mouse
-                        self.move_mouse(index_x, index_y, w, h)
+                        self.move_mouse(mouse_x, mouse_y, w, h)
                         
-                        # Desenha círculo no dedo indicador
-                        cv2.circle(debug_frame, (index_x, index_y), 15, (255, 0, 255), 3)
+                        # Desenha círculo no ponto médio da pinça
+                        cv2.circle(debug_frame, (mouse_x, mouse_y), 15, (255, 0, 255), 3)
                         
-                        status_text[0] = "status: controle do mouse ativo"
-                        
-                        # Clique quando polegar e indicador se tocam
-                        if is_click:
-                            current_time = time.time()
-                            if current_time - self.last_click_time >= self.click_cooldown:
-                                pyautogui.click()
-                                self.last_click_time = current_time
-                                status_text.append("clique realizado!")
-                            else:
-                                status_text.append("aguarde para proximo clique")
-                        else:
-                            status_text.append("junte polegar e indicador para clicar")
+                        status_text[0] = "status: controle do mouse ativo (pinça)"
+                        status_text.append("abra a mao para clicar")
                     else:
                         self.mouse_mode = False
+                        # Reseta suavização quando sai do modo mouse
+                        self.smooth_x = None
+                        self.smooth_y = None
+                    
+                    # Clique (mão aberta)
+                    if is_open and not is_fist and not is_pinch:
+                        current_time = time.time()
+                        if current_time - self.last_click_time >= self.click_cooldown:
+                            pyautogui.click()
+                            self.last_click_time = current_time
+                            status_text[0] = "status: clique realizado!"
+                            status_text.append("mao aberta detectada")
+                        else:
+                            status_text[0] = "status: mao aberta (aguarde)"
+                            status_text.append("cooldown do clique")
                     
                     # Fechar app (mão fechada)
                     if is_fist:
@@ -196,8 +238,11 @@ class AppController:
                                 thread = threading.Thread(target=show_and_close)
                                 thread.daemon = True
                                 thread.start()
-                    elif not is_pointing:
-                        status_text[0] = "status: mao aberta"
+                    elif not is_pinch and not is_open:
+                        # Status padrão quando mão detectada mas sem gestos específicos
+                        if not status_text or status_text[0] == "status: aguardando mao":
+                            status_text[0] = "status: mao detectada"
+                            status_text.append("pinça: move mouse | mao aberta: clique")
                         self.fist_detected = False
                         self.confirmation_shown = False
             
